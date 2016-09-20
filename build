@@ -125,27 +125,63 @@ _build_downloadPrebuiltOfficialBinary()
 	
 	local destinationFilePath="$destinationFolderPath"/rustup-init
 	
-	wget -q 'https://static.rust-lang.org/rustup/dist/'"$target"'/rustup-init' -o "$destinationFilePath"
-	chmod +x "$destinationFilePath"
+	case "$target" in
+		
+		*-windows-*)
+			local fileNameExtension='.exe'
+		;;
+		
+		*)
+			local fileNameExtension=''
+		;;
+		
+	esac
+		
+	cd "$destinationFolderPath" 1>/dev/null 2>/dev/null
+	
+		wget 'https://static.rust-lang.org/rustup/dist/'"$target"'/rustup-init'"$fileNameExtension"
+	
+	cd - 1>/dev/null 2>/dev/null
+	
+	chmod +x "$destinationFilePath""$fileNameExtension"
+}
+
+build_copyRustupInitForGnuLinuxToBootstrapDocker()
+{
+	local destinationFolderPath="$dockerRustUpCreatingFolderPath"/usr/bin
+	
+	rm -rf "$destinationFolderPath"/rustup-init
+	mkdir -m 0755 -p "$destinationFolderPath"
+	cp "$distFolderPath"/x86_64-unknown-linux-gnu/rustup-init "$destinationFolderPath"
 }
 
 build_createStaticallyLinkedLinuxMuslBinary()
 {
 	cd "$rustUpRsLibFolderPath" 1>/dev/null 2>/dev/null
 		
-		git -q checkout -- .
-		git -q reset --hard .
+		git checkout -q -- .
+		git reset -q --hard
 		git clean -d --force --quiet -x .
 		
 		docker run --rm -it -v "$(pwd)":/home/rust/src ekidd/rust-musl-builder cargo build --release
 		
 	cd - 1>/dev/null 2>/dev/null
 	
+	local target='x86_64-unknown-linux-musl'
+	
 	local destinationFolderPath="$distFolderPath"/"$target"
 	rm -rf "$destinationFolderPath"
 	mkdir "$destinationFolderPath"
 	
 	mv "$rustUpRsLibFolderPath"target/x86_64-unknown-linux-musl/release/rustup-init "$destinationFolderPath"
+	
+	cd "$rustUpRsLibFolderPath" 1>/dev/null 2>/dev/null
+		
+		git checkout -q -- .
+		git reset -q --hard
+		git clean -d --force --quiet -x .
+		
+	cd - 1>/dev/null 2>/dev/null
 }
 
 build_main()
@@ -156,11 +192,15 @@ build_main()
 	cd - 1>/dev/null 2>/dev/null
 
 	local distFolderPath="$_program_path"/dist
+	local dockerFolderPath="$_program_path"/docker
+	local dockerRustUpCreatingFolderPath="$_program_path"/docker
 	local rustUpRsLibFolderPath="$_program_path"/lib/rustup.rs
 	
-	build_ensureRequiredBinariesArePresent rm mkdir wget chmod git docker
+	build_ensureRequiredBinariesArePresent rm mkdir wget chmod git cp mv docker
 
-	build_downloadPrebuiltOfficialBinaries
+	#build_downloadPrebuiltOfficialBinaries
+	
+	build_copyRustupInitForGnuLinuxToBootstrapDocker
 	
 	build_createStaticallyLinkedLinuxMuslBinary
 }
