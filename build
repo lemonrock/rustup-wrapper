@@ -1,0 +1,168 @@
+#!/usr/bin/env sh
+# This file is part of rustup-wrapper. It is subject to the license terms in the COPYRIGHT file found in the top-level directory of this distribution and at https://raw.githubusercontent.com/lemonrock/rustup-wrapper/master/COPYRIGHT. No part of rustup-wrapper, including this file, may be copied, modified, propagated, or distributed except according to the terms contained in the COPYRIGHT file.
+# Copyright © 2016 The developers of rustup-wrapper. See the COPYRIGHT file in the top-level directory of this distribution and at https://raw.githubusercontent.com/lemonrock/rustup-wrapper/master/COPYRIGHT.
+
+
+set -e
+set -u
+set -f
+
+
+_program_path_find()
+{
+    if [ "${_program_fattening_program_path+set}" = 'set' ]; then
+        printf '%s\n' "$_program_fattening_program_path"
+
+    elif [ "${0%/*}" = "$0" ]; then
+
+        # We've been invoked by the interpreter as, say, bash program
+        if [ -r "$0" ]; then
+            pwd -P
+        # Clutching at straws; probably run via a download, anonymous script, etc, weird execve, etc
+        else
+            printf '\n'
+        fi
+
+    else
+
+        # We've been invoked with a relative or absolute path (also when invoked via PATH in a shell)
+
+        _program_path_find_parentPath()
+        {
+            parentPath="${scriptPath%/*}"
+            if [ -z "$parentPath" ]; then
+                parentPath='/'
+            fi
+            cd "$parentPath" 1>/dev/null
+        }
+
+        # pdksh / mksh have problems with unsetting a variable that was never set...
+        if [ "${CDPATH+set}" = 'set' ]; then
+            unset CDPATH
+        fi
+
+        if command -v realpath 1>/dev/null 2>/dev/null; then
+            (
+                scriptPath="$(realpath "$0")"
+
+                _program_path_find_parentPath
+                pwd -P
+            )
+        elif command -v readlink 1>/dev/null 2>/dev/null; then
+            (
+                scriptPath="$0"
+
+                while [ -L "$scriptPath" ]
+                do
+                    _program_path_find_parentPath
+                    scriptPath="$(readlink "$scriptPath")"
+                done
+
+                _program_path_find_parentPath
+                pwd -P
+            )
+        else
+            # This approach will fail in corner cases where the script itself is a symlink in a path not parallel with the concrete script
+            (
+                scriptPath="$0"
+
+                _program_path_find_parentPath
+                pwd -P
+            )
+        fi
+
+    fi
+}
+
+build_fail()
+{
+	local failureMessage="$1"
+	
+	printf '%s\n' "$failureMessage" 1>&2
+	exit 1
+}
+
+build_ensureRequiredBinariesArePresent()
+{
+	local reason="$1"
+	shift 1
+	
+	local binary
+	local missing=false
+	for binary in "$@"
+	do
+		if ! command -v "$binary" 1>/dev/null 2>/dev/null; then
+			printf '%s\n' "The binary '$binary' needs to be in the path" 1>&2
+			missing=true
+		fi
+	done
+	
+	if $missing; then
+		build_fail "Please make sure that the missing binaries are installed because '$reason'"
+	fi
+}
+
+build_downloadPrebuiltOfficialBinaries()
+{
+	local target
+	for target in \
+		aarch64-unknown-linux-gnu \
+		arm-unknown-linux-gnueabi arm-unknown-linux-gnueabihf armv7-unknown-linux-gnueabihf \
+		i686-apple-darwin i686-pc-windows-gnu i686-pc-windows-msvc i686-unknown-linux-gnu \
+		x86_64-apple-darwin x86_64-pc-windows-gnu x86_64-pc-windows-msvc x86_64-unknown-freebsd x86_64-unknown-linux-gnu x86_64-unknown-netbsd
+	do
+		_build_downloadPrebuiltOfficialBinary "$target"
+	done
+}
+
+_build_downloadPrebuiltOfficialBinary()
+{
+	local target="$1"
+	
+	local destinationFolderPath="$distFolderPath"/"$target"
+	rm -rf "$destinationFolderPath"
+	mkdir "$destinationFolderPath"
+	
+	local destinationFilePath="$destinationFolderPath"/rustup-init
+	
+	wget -q 'https://static.rust-lang.org/rustup/dist/'"$target"'/rustup-init' -o "$destinationFilePath"
+	chmod +x "$destinationFilePath"
+}
+
+build_createStaticallyLinkedLinuxMuslBinary()
+{
+	cd "$rustUpRsLibFolderPath" 1>/dev/null 2>/dev/null
+		
+		git -q checkout -- .
+		git -q reset --hard .
+		git clean -d --force --quiet -x .
+		
+		docker run --rm -it -v "$(pwd)":/home/rust/src ekidd/rust-musl-builder cargo build --release
+		
+	cd - 1>/dev/null 2>/dev/null
+	
+	local destinationFolderPath="$distFolderPath"/"$target"
+	rm -rf "$destinationFolderPath"
+	mkdir "$destinationFolderPath"
+	
+	mv "$rustUpRsLibFolderPath"target/x86_64-unknown-linux-musl/release/rustup-init "$destinationFolderPath"
+}
+
+build_main()
+{
+	local _program_path="$(_program_path_find)"
+	cd "$_program_path" 1>/dev/null 2>/dev/null
+		_program_path="$(pwd -P)"
+	cd - 1>/dev/null 2>/dev/null
+
+	local distFolderPath="$_program_path"/dist
+	local rustUpRsLibFolderPath="$_program_path"/lib/rustup.rs
+	
+	build_ensureRequiredBinariesArePresent rm mkdir wget chmod git docker
+
+	build_downloadPrebuiltOfficialBinaries
+	
+	build_createStaticallyLinkedLinuxMuslBinary
+}
+
+build_main "$@"
