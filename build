@@ -148,7 +148,7 @@ _build_downloadPrebuiltOfficialBinary()
 
 build_copyRustupInitForGnuLinuxToBootstrapDocker()
 {
-	local destinationFolderPath="$dockerRustUpCreatingFolderPath"/usr/bin
+	local destinationFolderPath="$dockerRustUpCreatingFolderPath"/tmp
 	
 	rm -rf "$destinationFolderPath"/rustup-init
 	mkdir -m 0755 -p "$destinationFolderPath"
@@ -156,32 +156,75 @@ build_copyRustupInitForGnuLinuxToBootstrapDocker()
 }
 
 build_createStaticallyLinkedLinuxMuslBinary()
-{
-	cd "$rustUpRsLibFolderPath" 1>/dev/null 2>/dev/null
-		
-		git checkout -q -- .
-		git reset -q --hard
-		git clean -d --force --quiet -x .
-		
-		docker run --rm -it -v "$(pwd)":/home/rust/src ekidd/rust-musl-builder cargo build --release
-		
-	cd - 1>/dev/null 2>/dev/null
+{	
+	# local imageId
+	# docker images --all --format '{{.Repository}}_{{.Tag}}\t{{.ID}}' | awk '$1 ~ /^<none>_'"$dockerRustUpCreatingName"'<none>$/ {print $2}' | while IFS= read -r imageId
+	# do
+	# 	docker rmi "$imageId"
+	# done
+	#
+	# local packageFolderPath
+	# set +f
+	# for packageFolderPath in "$dockerRustUpCreatingFolderPath"/home/rust/packages/*
+	# do
+	# 	set -f
+	# 	if [ -e "$packageFolderPath"/.git ]; then
+	#
+	# 		cd "$packageFolderPath" 1>/dev/null 2>/dev/null
+	#
+	# 			git checkout -q -- .
+	# 			git reset -q --hard
+	# 			git clean -d --force --quiet -x .
+	#
+	# 		cd - 1>/dev/null 2>/dev/null
+	#
+	# 	fi
+	# done
+	# set -f
+	#
+	#
+	# docker build --force-rm --rm --tag "$dockerRustUpCreatingName" "$dockerRustUpCreatingFolderPath"
 	
 	local target='x86_64-unknown-linux-musl'
 	
-	local destinationFolderPath="$distFolderPath"/"$target"
-	rm -rf "$destinationFolderPath"
-	mkdir "$destinationFolderPath"
+	build_createStaticallyLinkedLinuxMuslBinary_docker()
+	{
+		local crateFolder="$1"
+		local postBuildCallback="$2"
+		shift 2
+		
+		cd "$crateFolder" 1>/dev/null 2>/dev/null
+
+			cargo clean
+			git checkout -q -- .
+			git reset -q --hard
+			git clean -d --force --quiet -x .
+			
+			docker run --rm --tty --interactive --volume "$(pwd)":/home/rust/src ekidd/rust-musl-builder "$@"
+			
+			${postBuildCallback}
+			
+			cargo clean
+			git checkout -q -- .
+			git reset -q --hard
+			git clean -d --force --quiet -x .
+			
+		cd - 1>/dev/null 2>/dev/null
+	}
+	
+	build_createStaticallyLinkedLinuxMuslBinary_docker_postBuildCallback()
+	{
+		local destinationFolderPath="$distFolderPath"/"$target"
+		rm -rf "$destinationFolderPath"
+		mkdir -m 0755 -p "$destinationFolderPath"
+		cp target/
+	}
+	
+	build_createStaticallyLinkedLinuxMuslBinary_docker cargo build --release
+	
 	
 	mv "$rustUpRsLibFolderPath"target/x86_64-unknown-linux-musl/release/rustup-init "$destinationFolderPath"
 	
-	cd "$rustUpRsLibFolderPath" 1>/dev/null 2>/dev/null
-		
-		git checkout -q -- .
-		git reset -q --hard
-		git clean -d --force --quiet -x .
-		
-	cd - 1>/dev/null 2>/dev/null
 }
 
 build_main()
@@ -193,10 +236,11 @@ build_main()
 
 	local distFolderPath="$_program_path"/dist
 	local dockerFolderPath="$_program_path"/docker
-	local dockerRustUpCreatingFolderPath="$_program_path"/docker
+	local dockerRustUpCreatingName=build-rustup-init-for-x86_64-unknown-linux-musl
+	local dockerRustUpCreatingFolderPath="$dockerFolderPath"/"$dockerRustUpCreatingName"
 	local rustUpRsLibFolderPath="$_program_path"/lib/rustup.rs
 	
-	build_ensureRequiredBinariesArePresent rm mkdir wget chmod git cp mv docker
+	build_ensureRequiredBinariesArePresent rm mkdir wget chmod git cp mv docker awk
 
 	#build_downloadPrebuiltOfficialBinaries
 	

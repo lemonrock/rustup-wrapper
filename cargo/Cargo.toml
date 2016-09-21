@@ -1,0 +1,32 @@
+# This file is part of rustup-wrapper. It is subject to the license terms in the COPYRIGHT file found in the top-level directory of this distribution and at https://raw.githubusercontent.com/lemonrock/rustup-wrapper/master/COPYRIGHT. No part of rustup-wrapper, including this file, may be copied, modified, propagated, or distributed except according to the terms contained in the COPYRIGHT file.
+# Copyright © 2016 The developers of rustup-wrapper. See the COPYRIGHT file in the top-level directory of this distribution and at https://raw.githubusercontent.com/lemonrock/rustup-wrapper/master/COPYRIGHT.
+
+
+# Make sure  rustc-wrapper,  rust.x86_64-unknown-linux-musl.ar  and  rust.x86_64-unknown-linux-musl.linker are on the PATH
+# Replace  "/absolute/path/to/sysroot  (sic) with whatever path to a sysroot is in use
+
+
+[build]
+rustc = "rustc-wrapper"
+
+[target.x86_64-unknown-linux-musl]
+ar = "rust.x86_64-unknown-linux-musl.ar"
+linker = "rust.x86_64-unknown-linux-musl.linker"
+
+[target.x86_64-unknown-linux-musl.z]
+rustc-link-lib = ["static=z"]
+rustc-link-search = ["/absolute/path/to/sysroot/lib"]
+root = "/absolute/path/to/sysroot"
+include = "/absolute/path/to/sysroot/include"
+
+[target.x86_64-unknown-linux-musl.openssl]
+rustc-link-lib = ["static=crypto", "static=ssl"]
+rustc-link-search = ["/absolute/path/to/sysroot/lib"]
+root = "/absolute/path/to/sysroot"
+include = "/absolute/path/to/sysroot/include"
+
+[target.x86_64-unknown-linux-musl.curl]
+rustc-link-lib = ["static=curl"]
+rustc-link-search = ["/absolute/path/to/sysroot/lib"]
+root = "/absolute/path/to/sysroot"
+include = "/absolute/path/to/sysroot/include"

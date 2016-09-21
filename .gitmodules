@@ -1,5 +1,5 @@
 [submodule "lib/rustup.rs"]
-	path = lib/rustup.rs
+	path = docker/build-rustup-init-for-x86_64-unknown-linux-musl/home/rust/packages/rustup.rs
 	url = https://github.com/rust-lang-nursery/rustup.rs.git
 [submodule "docker/build-rustup-init-for-x86_64-unknown-linux-musl/home/rust/packages/musl"]
 	path = docker/build-rustup-init-for-x86_64-unknown-linux-musl/home/rust/packages/musl

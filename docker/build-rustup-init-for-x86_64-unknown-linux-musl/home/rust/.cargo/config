@@ -3,4 +3,26 @@
 
 
 [build]
-target="x86_64-unknown-linux-musl"
+jobs = 1
+rustc = "rustc-wrapper"     
+
+[target.x86_64-unknown-linux-musl]
+linker = "rust.x86_64-unknown-linux-musl.linker"
+
+[target.x86_64-unknown-linux-musl.z]
+rustc-link-lib = ["static=z"]
+rustc-link-search = ["/lib"]
+root = "/"
+include = "/usr/include"
+
+[target.x86_64-unknown-linux-musl.openssl]
+rustc-link-lib = ["static=crypto", "static=ssl"]
+rustc-link-search = ["/usr/lib"]
+root = "/usr"
+include = "/usr/include"
+
+[target.x86_64-unknown-linux-musl.curl]
+rustc-link-lib = ["static=curl"]
+rustc-link-search = ["/usr/lib"]
+root = "/usr"
+include = "/usr/include"
