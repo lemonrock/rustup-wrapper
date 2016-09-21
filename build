@@ -186,6 +186,12 @@ build_createStaticallyLinkedLinuxMuslBinary()
 	# docker build --force-rm --rm --tag "$dockerRustUpCreatingName" "$dockerRustUpCreatingFolderPath"
 	
 	local target='x86_64-unknown-linux-musl'
+
+	local destinationFolderPath="$distFolderPath"/"$target"
+	rm -rf "$destinationFolderPath"
+	mkdir -m 0755 -p "$destinationFolderPath"
+	
+	local rustupFolder="$_program_path"/lib/rustup.rs
 	
 	build_createStaticallyLinkedLinuxMuslBinary_docker()
 	{
@@ -214,13 +220,10 @@ build_createStaticallyLinkedLinuxMuslBinary()
 	
 	build_createStaticallyLinkedLinuxMuslBinary_docker_postBuildCallback()
 	{
-		local destinationFolderPath="$distFolderPath"/"$target"
-		rm -rf "$destinationFolderPath"
-		mkdir -m 0755 -p "$destinationFolderPath"
-		cp target/
+		mv target/"$target"/release/rustup-init "$destinationFolderPath"
 	}
 	
-	build_createStaticallyLinkedLinuxMuslBinary_docker cargo build --release
+	build_createStaticallyLinkedLinuxMuslBinary_docker rustupFolder build_createStaticallyLinkedLinuxMuslBinary_docker_postBuildCallback cargo build --release
 	
 	
 	mv "$rustUpRsLibFolderPath"target/x86_64-unknown-linux-musl/release/rustup-init "$destinationFolderPath"
