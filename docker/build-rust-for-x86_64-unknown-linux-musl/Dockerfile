@@ -23,39 +23,43 @@ rm -rf /usr/local /opt \
 USER rust
 WORKDIR /home/rust
 ENV PATH=/home/rust/.local/bin:/usr/bin:/bin
-ENV PREFIX=/home/rust/sysroot
 
 RUN \
-cd packages/musl \
-&& CFLAGS='-O3 -pipe -g0' ./configure --prefix="$PREFIX" --disable-shared --enable-optimize --enable-wrapper=all \
-&& make \
-&& make install
+rustc -Vv
 
-ENV CC "$PREFIX"/bin/musl-gcc
-
-RUN \
-mv packages/libunwind packages/llvm/projects &&
-cd packages/llvm/projects/libunwind \
-&& mkdir -m 0755 -p build \
-&& cd build \
-&& cmake -DLLVM_PATH=../../.. -DLIBUNWIND_ENABLE_SHARED=0 .. \
-&& make \
-cp lib/libunwind.a "$PREFIX"/lib/
-
-RUN \
-cd packages/rust \
-&& ./configure --target=x86_64-unknown-linux-musl --musl-root="$PREFIX" --prefix="$PREFIX" --llvm-root=/home/rust/packages \
-&& make \
-&& make install
-
-RUN \
-echo 'fn main() { println!("Hello World"); panic!("failed"); }' >example.rs \
-&& "$PREFIX"/rustc --target=x86_64-unknown-linux-musl example.rs \
-&& ./example
-# Should fail with a nasty error...
-
-RUN \
-cd packages/cargo \
-&& ./configure --prefix="$PREFIX" --localstatedir="$PREFIX"/var/lib --sysconfdir="$PREFIX"/etc --local-rust-root="$PREFIX" \
-&& make \
-&& make install
+# ENV PREFIX=/home/rust/sysroot
+#
+# RUN \
+# cd packages/musl \
+# && CFLAGS='-O3 -pipe -g0' ./configure --prefix="$PREFIX" --disable-shared --enable-optimize --enable-wrapper=all \
+# && make \
+# && make install
+#
+# ENV CC "$PREFIX"/bin/musl-gcc
+#
+# RUN \
+# mv packages/libunwind packages/llvm/projects &&
+# cd packages/llvm/projects/libunwind \
+# && mkdir -m 0755 -p build \
+# && cd build \
+# && cmake -DLLVM_PATH=../../.. -DLIBUNWIND_ENABLE_SHARED=0 .. \
+# && make \
+# cp lib/libunwind.a "$PREFIX"/lib/
+#
+# RUN \
+# cd packages/rust \
+# && ./configure --target=x86_64-unknown-linux-musl --musl-root="$PREFIX" --prefix="$PREFIX" --llvm-root=/home/rust/packages \
+# && make \
+# && make install
+#
+# RUN \
+# echo 'fn main() { println!("Hello World"); panic!("failed"); }' >example.rs \
+# && "$PREFIX"/rustc --target=x86_64-unknown-linux-musl example.rs \
+# && ./example
+# # Should fail with a nasty error...
+#
+# RUN \
+# cd packages/cargo \
+# && ./configure --prefix="$PREFIX" --localstatedir="$PREFIX"/var/lib --sysconfdir="$PREFIX"/etc --local-rust-root="$PREFIX" \
+# && make \
+# && make install

@@ -152,26 +152,104 @@ build_downloadIndependentLinuxMuslBinaries()
 	local baseUrl='https://alpine.geeknet.cz/distfiles'
 	local pkgver='1.10.0'
 	local target='x86_64-unknown-linux-musl'
+	local channel='stable'
+	local channelTarget="$channel"-"$target"
+	local prefix=.multirust/toolchains/"$channelTarget"
 
 	local destinationFolderPath="$bootstrapFolderPath"/"$target"
-
+	local destinationUserFolderPath="$destinationFolderPath"/user
+	
 	rm -rf "$destinationFolderPath"
-	mkdir -m 0755 -p "$destinationFolderPath"
-	https://alpine.geeknet.cz/distfiles/cargo-0.11.0-nightly-x86_64-alpine-linux-musl.tar.gz
-	cd "$destinationFolderPath" 1>/dev/null 2>/dev/null
+	mkdir -m 0700 -p "$destinationUserFolderPath"
+	
+	local rustupFolderPath="$destinationUserFolderPath"/.multirust
+	mkdir -m 0700 -p "$rustupFolderPath"/tmp "$rustupFolderPath"/toolchains "$rustupFolderPath"/update-hashes
+	mkdir -m 0700 -p "$destinationFolderPath"/"$prefix"
+	
+	cat >"$rustupFolderPath"/settings.toml <<-EOF
+		default_toolchain = "stable"
+		telemetry = false
+		version = "12"
+
+		[overrides]
+	EOF
+	
+	# 20 byte hash
+	# touch "$rustupFolderPath"/update-hashes/"$channelTarget"
+	
+	for downloadFile in \
+		cargo-0.11.0-nightly-x86_64-alpine-linux-musl \
+		rustc-"$pkgver"-x86_64-unknown-linux-musl \
+		rust-std-"$pkgver"-x86_64-unknown-linux-musl
+	do
+		cd "$destinationFolderPath" 1>/dev/null 2>/dev/null
 		
-		local downloadFile
-		for downloadFile in \
-			rustc-"$pkgver"-x86_64-unknown-linux-musl \
-			rust-std-"$pkgver"-x86_64-unknown-linux-musl \
-			cargo-0.11.0-nightly-x86_64-alpine-linux-musl
-		do
-			wget "$baseUrl"/"$downloadFile"-"$target".tar.gz
-			tar --extract --gzip --file "$downloadFile"-"$target".tar.gz
-			rm -rf "$downloadFile"-"$target".tar.gz
-		done
+			wget "$baseUrl"/"$downloadFile".tar.gz
+			wget "$baseUrl"/"$downloadFile".tar.gz.sha1
+			tar --extract --gzip --file "$downloadFile".tar.gz
+			#rm -rf "$downloadFile".tar.gz
 				
-	cd - 1>/dev/null 2>/dev/null
+		cd - 1>/dev/null 2>/dev/null
+		
+		local path
+		if [ "$downloadFile" = cargo-0.11.0-nightly-x86_64-alpine-linux-musl ]; then
+			path="$destinationFolderPath"/cargo-nightly-"$target"
+		else
+			path="$destinationFolderPath"/"$downloadFile"
+		fi
+		
+		cd "$path" 1>/dev/null 2>/dev/null
+			
+			local components="$(cat components | tr $'\n' ',')"
+			echo "$components"
+			#  --libdir="$prefix"/lib --mandir="$prefix"/share/man
+			./install.sh --destdir="$destinationUserFolderPath" --prefix="$prefix" --components="$components" --disable-ldconfig --disable-verify --verbose
+			rm "$destinationUserFolderPath"/"$prefix"/lib/rustlib/install.log
+			rm "$destinationUserFolderPath"/"$prefix"/lib/rustlib/uninstall.sh
+			
+		cd - 1>/dev/null 2>/dev/null
+		
+		rm -rf "$path"
+		
+	done
+	
+	cat >"$destinationUserFolderPath"/"$prefix"/lib/rustlib/multirust-config.toml <<-EOF
+		config_version = "1"
+
+		[[components]]
+		pkg = "rustc"
+		target = "${target}"
+
+		[[components]]
+		pkg = "rust-std"
+		target = "${target}"
+
+		#[[components]]
+		#pkg = "rust-docs"
+		#target = "${target}"
+
+		[[components]]
+		pkg = "cargo"
+		target = "${target}"
+	EOF
+	
+	#cat >"$destinationFolderPath"/"$prefix"/lib/rustlib/multirust-channel-manifest.toml <<-EOF
+	#EOF
+	
+	local cargoFolderPath="$destinationUserFolderPath"/.cargo
+	mkdir -m 0700 -p "$cargoFolderPath"
+	
+	mkdir -m 0700 -p "$destinationUserFolderPath"/.local/bin
+	
+	ln -s ../.local/bin "$cargoFolderPath"/bin
+	
+	local binary
+	for binary in cargo rust-gdb rust-lldb rustc rustdoc
+	do
+		ln -s ../../"$prefix"/bin/"$binary" "$cargoFolderPath"/bin/"$binary"
+	done
+	
+	printf '' >"$cargoFolderPath"/config
 }
 
 build_createBootstrapStaticallyLinkedBinaryForLinuxMusl()
@@ -210,12 +288,13 @@ build_createBootstrapStaticallyLinkedBinaryForLinuxMusl()
 
 build_createBootstrapStaticallyLinkedBinariesForLinuxMusl()
 {
-	build_createBootstrapStaticallyLinkedBinaryForLinuxMusl cargo cargo
 	build_createBootstrapStaticallyLinkedBinaryForLinuxMusl rustup-init rustup.rs --features='curl-backend no-self-update'
 }
 
-build_buildRustForLinuxMusl()
+build_buildRustUpInitForLinuxMusl()
 {
+	local target='x86_64-unknown-linux-musl'
+	local channel='stable'
 	local dockerName='build-rust-for-x86_64-unknown-linux-musl'
 	local dockerBuildFolderPath="$dockerFolderPath"/"$dockerName"
 	
@@ -225,13 +304,13 @@ build_buildRustForLinuxMusl()
 		docker rmi "$imageId"
 	done
 	
-	local rustupInitDestinationFilePath="$dockerBuildFolderPath"/home/rust/.local/bin
-	rm -rf "$rustupInitDestinationFilePath"/rustup-init
-	cp "$bootstrapFolderPath"/x86_64-unknown-linux-gnu/rustup-init "$rustupInitDestinationFilePath"
+	cp -a "$bootstrapFolderPath"/"$target"/user/.local "$dockerBuildFolderPath"/home/rust
+	cp -a "$bootstrapFolderPath"/"$target"/user/.cargo "$dockerBuildFolderPath"/home/rust
+	cp -a "$bootstrapFolderPath"/"$target"/user/.multirust "$dockerBuildFolderPath"/home/rust
 	
 	cd "$dockerBuildFolderPath" 1>/dev/null 2>/dev/null
 	
-		docker build --force-rm --rm --tag "$dockerRustUpCreatingName" "$dockerRustUpCreatingFolderPath"
+		docker build --force-rm --rm --tag "$dockerName" "$dockerBuildFolderPath"
 		
 	cd - 1>/dev/null 2>dev/null
 }
@@ -246,16 +325,13 @@ build_main()
 	local bootstrapFolderPath="$_program_path"/bootstrap
 	local dockerFolderPath="$_program_path"/docker
 	
-	build_ensureRequiredBinariesArePresent rm mkdir wget chmod git cp mv docker awk tar gunzip
+	build_ensureRequiredBinariesArePresent rm mkdir wget chmod git cp mv docker awk tar gunzip cat tr
 	
-	build_downloadIndependentLinuxMuslBinaries
+	#build_downloadIndependentLinuxMuslBinaries
+		
+	build_buildRustUpInitForLinuxMusl
 	
 	#build_downloadPrebuiltOfficialBinaries
-		
-	#build_createBootstrapStaticallyLinkedBinariesForLinuxMusl
-	
-	#build_buildRustForLinuxMusl
-	
 }
 
 build_main "$@"
