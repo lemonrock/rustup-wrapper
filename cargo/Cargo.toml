@@ -4,7 +4,8 @@
 
 # Make sure  rustc-wrapper,  rust.x86_64-unknown-linux-musl.ar  and  rust.x86_64-unknown-linux-musl.linker are on the PATH
 # Replace  "/absolute/path/to/sysroot  (sic) with whatever path to a sysroot is in use
-
+# rustc --target path/to/target.json 
+# https://github.com/japaric/rust-cross is very useful
 
 [build]
 rustc = "rustc-wrapper"
