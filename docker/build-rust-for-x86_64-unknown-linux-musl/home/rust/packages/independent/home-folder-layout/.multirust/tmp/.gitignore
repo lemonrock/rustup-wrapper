@@ -2,14 +2,3 @@
 # Copyright © 2016 The developers of rustup-wrapper. See the COPYRIGHT file in the top-level directory of this distribution and at https://raw.githubusercontent.com/lemonrock/rustup-wrapper/master/COPYRIGHT.
 
 
-Dockerfile
-.dockerignore
-**/*.gitignore
-**/*.git
-**/*.gitmodules
-home/rust/packages/libunwind
-home/rust/packages/llvm
-home/rust/packages/rustup.rs
-home/rust/packages/musl
-home/rust/packages/rust
-home/rust/packages/cargo

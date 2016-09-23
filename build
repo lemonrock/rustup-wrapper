@@ -148,12 +148,6 @@ _build_downloadPrebuiltOfficialBinary()
 
 build_downloadIndependentLinuxMuslBinaries()
 {
-	# See http://git.alpinelinux.org/cgit/aports/tree/testing/rust/APKBUILD
-	local baseUrl='https://alpine.geeknet.cz/distfiles'
-	local pkgver='1.10.0'
-	local target='x86_64-unknown-linux-musl'
-	local channel='stable'
-	local channelTarget="$channel"-"$target"
 	local prefix=.multirust/toolchains/"$channelTarget"
 
 	local destinationFolderPath="$bootstrapFolderPath"/"$target"
@@ -165,14 +159,6 @@ build_downloadIndependentLinuxMuslBinaries()
 	local rustupFolderPath="$destinationUserFolderPath"/.multirust
 	mkdir -m 0700 -p "$rustupFolderPath"/tmp "$rustupFolderPath"/toolchains "$rustupFolderPath"/update-hashes
 	mkdir -m 0700 -p "$destinationFolderPath"/"$prefix"
-	
-	cat >"$rustupFolderPath"/settings.toml <<-EOF
-		default_toolchain = "stable"
-		telemetry = false
-		version = "12"
-
-		[overrides]
-	EOF
 	
 	# 20 byte hash
 	# touch "$rustupFolderPath"/update-hashes/"$channelTarget"
@@ -187,7 +173,6 @@ build_downloadIndependentLinuxMuslBinaries()
 			wget "$baseUrl"/"$downloadFile".tar.gz
 			wget "$baseUrl"/"$downloadFile".tar.gz.sha1
 			tar --extract --gzip --file "$downloadFile".tar.gz
-			#rm -rf "$downloadFile".tar.gz
 				
 		cd - 1>/dev/null 2>/dev/null
 		
@@ -212,44 +197,6 @@ build_downloadIndependentLinuxMuslBinaries()
 		rm -rf "$path"
 		
 	done
-	
-	cat >"$destinationUserFolderPath"/"$prefix"/lib/rustlib/multirust-config.toml <<-EOF
-		config_version = "1"
-
-		[[components]]
-		pkg = "rustc"
-		target = "${target}"
-
-		[[components]]
-		pkg = "rust-std"
-		target = "${target}"
-
-		#[[components]]
-		#pkg = "rust-docs"
-		#target = "${target}"
-
-		[[components]]
-		pkg = "cargo"
-		target = "${target}"
-	EOF
-	
-	#cat >"$destinationFolderPath"/"$prefix"/lib/rustlib/multirust-channel-manifest.toml <<-EOF
-	#EOF
-	
-	local cargoFolderPath="$destinationUserFolderPath"/.cargo
-	mkdir -m 0700 -p "$cargoFolderPath"
-	
-	mkdir -m 0700 -p "$destinationUserFolderPath"/.local/bin
-	
-	ln -s ../.local/bin "$cargoFolderPath"/bin
-	
-	local binary
-	for binary in cargo rust-gdb rust-lldb rustc rustdoc
-	do
-		ln -s ../../"$prefix"/bin/"$binary" "$cargoFolderPath"/bin/"$binary"
-	done
-	
-	printf '' >"$cargoFolderPath"/config
 }
 
 build_createBootstrapStaticallyLinkedBinaryForLinuxMusl()
@@ -291,12 +238,12 @@ build_createBootstrapStaticallyLinkedBinariesForLinuxMusl()
 	build_createBootstrapStaticallyLinkedBinaryForLinuxMusl rustup-init rustup.rs --features='curl-backend no-self-update'
 }
 
-build_buildRustUpInitForLinuxMusl()
+build_buildRustDockerForLinuxMusl()
 {
-	local target='x86_64-unknown-linux-musl'
-	local channel='stable'
-	local dockerName='build-rust-for-x86_64-unknown-linux-musl'
-	local dockerBuildFolderPath="$dockerFolderPath"/"$dockerName"
+	# See also https://github.com/docker/docker/issues/928
+	# Remove dangling images: docker rmi "$(docker images --filter dangling=true)" - except this can include in-build images!
+	# Needs bash
+	"$_program_path"/tools/docker-clean/docker-clean
 	
 	local imageId
 	docker images --all --format '{{.Repository}}_{{.Tag}}\t{{.ID}}' | awk '$1 ~ /^<none>_'"$dockerName"'<none>$/ {print $2}' | while IFS= read -r imageId
@@ -304,19 +251,48 @@ build_buildRustUpInitForLinuxMusl()
 		docker rmi "$imageId"
 	done
 	
-	cp -a "$bootstrapFolderPath"/"$target"/user/.local "$dockerBuildFolderPath"/home/rust
-	cp -a "$bootstrapFolderPath"/"$target"/user/.cargo "$dockerBuildFolderPath"/home/rust
-	cp -a "$bootstrapFolderPath"/"$target"/user/.multirust "$dockerBuildFolderPath"/home/rust
-	
 	cd "$dockerBuildFolderPath" 1>/dev/null 2>/dev/null
-	
+
 		docker build --force-rm --rm --tag "$dockerName" "$dockerBuildFolderPath"
 		
-	cd - 1>/dev/null 2>dev/null
+	cd - 1>/dev/null 2>/dev/null
+}
+
+build_dockerRunCargo()
+{
+	local packageName='rustup.rs'
+	local binaryName='rustup-init'
+	
+	cd "$dockerBuildFolderPath"/home/rust/packages/"$packageName" 1>/dev/null 2>/dev/null
+
+		cargo clean
+		git checkout -q -- .
+		git reset -q --hard
+		git clean -d --force --quiet -x .
+		
+		docker run --rm --tty --interactive --volume "$(pwd)":/home/rust/build "$dockerName" \
+			cargo build --release "$@"
+		
+		mv target/"$target"/release/"$binaryName" "$destinationFolderPath"
+		
+		cargo clean
+		git checkout -q -- .
+		git reset -q --hard
+		git clean -d --force --quiet -x .
+		
+	cd - 1>/dev/null 2>/dev/null	
 }
 
 build_main()
 {
+	# See http://git.alpinelinux.org/cgit/aports/tree/testing/rust/APKBUILD
+	local baseUrl='https://alpine.geeknet.cz/distfiles'
+	local pkgver='1.10.0'
+	local target='x86_64-unknown-linux-musl'
+	local channel='stable'
+	local channelTarget="$channel"-"$target"
+	local dockerName='build-rust-for-x86_64-unknown-linux-musl'
+	
 	local _program_path="$(_program_path_find)"
 	cd "$_program_path" 1>/dev/null 2>/dev/null
 		_program_path="$(pwd -P)"
@@ -324,14 +300,17 @@ build_main()
 
 	local bootstrapFolderPath="$_program_path"/bootstrap
 	local dockerFolderPath="$_program_path"/docker
+	local dockerBuildFolderPath="$dockerFolderPath"/"$dockerName"
 	
 	build_ensureRequiredBinariesArePresent rm mkdir wget chmod git cp mv docker awk tar gunzip cat tr
 	
+	#build_downloadPrebuiltOfficialBinaries
+	
 	#build_downloadIndependentLinuxMuslBinaries
 		
-	build_buildRustUpInitForLinuxMusl
+	build_buildRustDockerForLinuxMusl
 	
-	#build_downloadPrebuiltOfficialBinaries
+	build_dockerRunCargo
 }
 
 build_main "$@"

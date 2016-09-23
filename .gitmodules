@@ -1,18 +1,3 @@
-[submodule "lib/rustup.rs"]
-	path = docker/build-rust-for-x86_64-unknown-linux-musl/home/rust/packages/rustup.rs
-	url = https://github.com/rust-lang-nursery/rustup.rs.git
-[submodule "docker/build-rustup-init-for-x86_64-unknown-linux-musl/home/rust/packages/musl"]
-	path = docker/build-rust-for-x86_64-unknown-linux-musl/home/rust/packages/musl
-	url = git://git.musl-libc.org/musl
-[submodule "docker/build-rust-for-x86_64-unknown-linux-musl/home/rust/packages/libunwind"]
-	path = docker/build-rust-for-x86_64-unknown-linux-musl/home/rust/packages/libunwind
-	url = https://github.com/llvm-mirror/libunwind
-[submodule "docker/build-rust-for-x86_64-unknown-linux-musl/home/rust/packages/rust"]
-	path = docker/build-rust-for-x86_64-unknown-linux-musl/home/rust/packages/rust
-	url = https://github.com/rust-lang/rust.git
-[submodule "docker/build-rust-for-x86_64-unknown-linux-musl/home/rust/packages/cargo"]
-	path = docker/build-rust-for-x86_64-unknown-linux-musl/home/rust/packages/cargo
-	url = https://github.com/rust-lang/cargo.git
-[submodule "docker/build-rust-for-x86_64-unknown-linux-musl/home/rust/packages/llvm"]
-	path = docker/build-rust-for-x86_64-unknown-linux-musl/home/rust/packages/llvm
-	url = https://github.com/llvm-mirror/llvm.git
+[submodule "tools/docker-clean"]
+	path = tools/docker-clean
+	url = https://github.com/ZZROTDesign/docker-clean.git
