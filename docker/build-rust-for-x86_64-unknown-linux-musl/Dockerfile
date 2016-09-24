@@ -11,22 +11,25 @@ WORKDIR /
 
 ARG glibcCompatibilityBaseUrl=https://github.com/sgerrand/alpine-pkg-glibc/releases/download
 ARG glibcCompatibilityVersion=2.23-r3
-ARG channel=stable
+ARG channel=nightly
 ARG target=x86_64-unknown-linux-musl
 ARG PREFIX=/usr/local
 ARG officialBaseUrl=https://static.rust-lang.org/rustup/dist
 ARG fromTarget=x86_64-unknown-linux-gnu
 ARG muslGitVersion=v1.1.15
+ARG muslCrossMakeVersion=99ee12d604e564fa5b403c942e2809881d34d114
 ARG rustGitVersion=5cc6c6b1b76960441c39ef29e951f22de45da15b
+# LLVM 3.7
+ARG libunwindGitVersion=release_37
 ARG cargoGitVersion=939922974bc18df2daac055fd1bcb2c2d87d629d
 
 
 
 RUN \
-printf '%s\n%s\n%s\n' 'http://dl-cdn.alpinelinux.org/alpine/v3.4/main' 'http://dl-cdn.alpinelinux.org/alpine/v3.4/community' 'http://dl-cdn.alpinelinux.org/alpine/edge/testing' >/etc/apk/repositories \
+printf '%s\n%s\n%s\n' 'http://dl-cdn.alpinelinux.org/alpine/v3.4/main' 'http://dl-cdn.alpinelinux.org/alpine/v3.4/community' 'http://dl-cdn.alpinelinux.org/alpine/edge/main' 'http://dl-cdn.alpinelinux.org/alpine/edge/community' 'http://dl-cdn.alpinelinux.org/alpine/edge/testing' >/etc/apk/repositories \
 && apk update \
 && apk upgrade \
-&& apk add zlib libgcc sudo gcc g++ git make cmake zlib-dev openssl-dev musl-dev curl-dev curl python file patchelf
+&& apk add zlib libgcc sudo binutils gcc g++ git make cmake zlib-dev openssl-dev musl-dev curl-dev curl wget python file patchelf
 
 # Install unofficial glibc packages
 RUN \
@@ -64,40 +67,11 @@ WORKDIR /home/rust
 ENV PATH=/usr/bin:/bin
 
 
-RUN \
-cd packages \
-&& git clone --recursive --single-branch --depth 100 git://git.musl-libc.org/musl
-
-RUN \
-cd packages \
-&& git clone --recursive --single-branch --depth 100 https://github.com/rust-lang/rust.git
-
-RUN \
-cd packages \
-&& git clone --recursive --single-branch --depth 100 https://github.com/rust-lang/cargo.git
-
-RUN \
-cd packages/musl \
-&& git checkout "$muslGitVersion" \
-&& git submodule update --init --recursive
-
-RUN \
-cd packages/rust \
-&& git checkout "$rustGitVersion" \
-&& git submodule update --init --recursive
-
-RUN \
-cd packages/cargo \
-&& git checkout "$cargoGitVersion" \
-&& git submodule update --init --recursive
-
-
-
 # https://static.rust-lang.org/dist/channel-rust-stable.toml.sha256  and  https://static.rust-lang.org/dist/channel-rust-stable.toml
 RUN \
-cd packages/official \
+mkdir -m 0750 -p packages/official \
+&& cd packages/official \
 && curl --location --output rustup-init "$officialBaseUrl"/"$fromTarget"/rustup-init
-RUN ls -la /usr/glibc-compat/lib
 RUN \
 cd packages/official \
 && chmod +x rustup-init \
@@ -120,15 +94,95 @@ RUN /home/rust/.cargo/bin/rustup update
 RUN rustc -Vv
 
 
-
 RUN \
-cd packages/musl \
-&& CFLAGS='-O3 -pipe -g0' ./configure --prefix="$PREFIX" --disable-shared --enable-optimize --enable-wrapper=all \
-&& make --jobs 8 \
-&& make install
+cd packages \
+&& git clone --recursive --depth 100 https://github.com/rust-lang/rust.git
 
 RUN \
 cd packages/rust \
+&& git checkout "$rustGitVersion" \
+&& git submodule update --init --recursive
+
+
+RUN \
+cd packages \
+&& git clone --recursive --depth 100 https://github.com/rust-lang/cargo.git
+
+RUN \
+cd packages/cargo \
+&& git checkout "$cargoGitVersion" \
+&& git submodule update --init --recursive
+
+
+RUN \
+cd packages \
+&& git clone --recursive --depth 100 git://git.musl-libc.org/musl
+
+RUN \
+cd packages/musl \
+&& git checkout "$muslGitVersion" \
+&& git submodule update --init --recursive
+
+
+RUN \
+cd packages \
+&& git clone --recursive --depth 10 https://github.com/richfelker/musl-cross-make.git
+
+RUN \
+cd packages/musl-cross-make \
+&& git checkout "$muslCrossMakeVersion" \
+&& git submodule update --init --recursive
+
+
+RUN \
+cd packages \
+&& git clone --recursive https://github.com/llvm-mirror/libunwind.git
+
+RUN \
+cd packages/libunwind \
+&& git checkout "$libunwindGitVersion" \
+&& git submodule update --init --recursive
+
+RUN \
+cd packages \
+&& git clone --recursive https://github.com/llvm-mirror/llvm.git
+
+# Yes, we checkout the same branch as libunwind - libunwindGitVersion
+RUN \
+cd packages/llvm \
+&& git checkout "$libunwindGitVersion" \
+&& git submodule update --init --recursive
+
+
+
+RUN \
+cd packages/musl \
+&& CFLAGS='-O3 -pipe -g0' ./configure --prefix="$PREFIX" --enable-optimize --enable-wrapper=all \
+&& make --jobs 8 \
+&& make install
+
+# Disgusting; but the only way we can use Alpine's system linker without installing musl-cross-make - which doesn't support binutils 2.27 (and rustc compilation needs that version)
+RUN cp /usr/local/lib/libutil.a /usr/local/lib/libssp_nonshared.a
+
+RUN printf '#include <stdlib.h>\nint main() { return 0; }' >a.c
+RUN sed -i -e 's/"\$@"/"$@" --pie/g' /usr/local/bin/musl-gcc
+RUN /usr/local/bin/musl-gcc -o a a.c
+RUN ./a
+
+RUN \
+mv packages/libunwind packages/llvm/projects \
+&& cd packages/llvm \
+&& mkdir -m 0750 -p projects/libunwind/build \
+&& cd projects/libunwind/build \
+&& CC=/usr/local/bin/musl-gcc cmake -DLLVM_PATH=../../.. -DLIBUNWIND_ENABLE_SHARED=0 .. \
+&& make --jobs 8 \
+&& cp lib/libunwind.a "$PREFIX"/lib
+
+RUN \
+cd packages/rust \
+&& printf '#!/bin/sh\n' >src/libbacktrace/missing \
+&& chmod +x src/libbacktrace/missing \
+&& sed -i -e '/\${LIB_PREFIX}extra\*\${LIB_SUF}/d' src/etc/local_stage0.sh \
 && sed -i -e 's/CFG_OSTYPE=unknown-linux-gnu/CFG_OSTYPE=unknown-linux-musl/g' configure \
 && sed -i -e 's/#if defined(__linux__) and !defined(__ANDROID__)/#if defined(__GLIBC__)/g' src/llvm/lib/Support/DynamicLibrary.cpp \
 && sed -i -e 's/^namespace llvm/#undef fopen64\n#undef fseeko64\n#undef fstat64\n#undef fstatvfs64\n#undef ftello64\n#undef lstat64\n#undef stat64\n#undef tmpfile64\n\nnamespace llvm/g' src/llvm/include/llvm/Analysis/TargetLibraryInfo.h
@@ -167,65 +221,65 @@ make install
 
 
 
-ARG cargoTarget=x86_64-alpine-linux-musl
-ARG independentBaseUrl=https://alpine.geeknet.cz/distfiles
-ARG packageVersion=1.10.0
-ARG cargoPackageVersion=0.11.0-nightly
-RUN \
-cd packages/independent \
-&& curl --location --output rustc-"$packageVersion"-"$target".tar.gz "$independentBaseUrl"/rustc-"$packageVersion"-"$target".tar.gz \
-&& curl --location --output rustc-"$packageVersion"-"$target".tar.gz.sha1 "$independentBaseUrl"/rustc-"$packageVersion"-"$target".tar.gz.sha1 \
-&& sha1sum -c rustc-"$packageVersion"-"$target".tar.gz.sha1
-RUN \
-cd packages/independent \
-&& curl --location --output rust-std-"$packageVersion"-"$target".tar.gz "$independentBaseUrl"/rust-std-"$packageVersion"-"$target".tar.gz \
-&& curl --location --output rust-std-"$packageVersion"-"$target".tar.gz.sha1 "$independentBaseUrl"/rust-std-"$packageVersion"-"$target".tar.gz.sha1 \
-&& sha1sum -c rust-std-"$packageVersion"-"$target".tar.gz.sha1
-RUN \
-cd packages/independent \
-&& curl --location --output cargo-"$cargoPackageVersion"-"$cargoTarget".tar.gz "$independentBaseUrl"/cargo-"$cargoPackageVersion"-"$cargoTarget".tar.gz \
-&& curl --location --output cargo-"$cargoPackageVersion"-"$cargoTarget".tar.gz.sha1 "$independentBaseUrl"/cargo-"$cargoPackageVersion"-"$cargoTarget".tar.gz.sha1 \
-&& sha1sum -c cargo-"$cargoPackageVersion"-"$cargoTarget".tar.gz.sha1
-
-# We separate tarball extraction from download to avoid extracting anything if any download is corrupted or mischevious
-# Note that the extracted cargo tarball has a DIFFERENT root folder naming convention to the other two (it doesn't match tarball name)
-RUN \
-mkdir -m 0750 bootstrap \
-&& cp -a packages/independent/home-folder-layout/. bootstrap \
-&& cd packages/independent \
-&& tar --extract --gzip --file rustc-"$packageVersion"-"$target".tar.gz \
-&& cd rustc-"$packageVersion"-x86_64-unknown-linux-musl \
-&& ./install.sh --destdir=/home/rust/bootstrap --prefix=.multirust/toolchains/"$channel"-"$target" --components="$(cat components | tr $'\n' ',')" --disable-ldconfig --disable-verify --verbose \
-&& cd .. \
-&& rm -rf rustc-"$packageVersion"-x86_64-unknown-linux-musl \
-&& tar --extract --gzip --file rust-std-"$packageVersion"-"$target".tar.gz \
-&& cd rust-std-"$packageVersion"-x86_64-unknown-linux-musl \
-&& ./install.sh --destdir=/home/rust/bootstrap --prefix=.multirust/toolchains/"$channel"-"$target" --components="$(cat components | tr $'\n' ',')" --disable-ldconfig --disable-verify --verbose \
-&& cd .. \
-&& rm -rf rust-std-"$packageVersion"-x86_64-unknown-linux-musl \
-&& tar --extract --gzip --file cargo-"$cargoPackageVersion"-"$cargoTarget".tar.gz \
-&& cd cargo-nightly-"$target" \
-&& ./install.sh --destdir=/home/rust/bootstrap --prefix=.multirust/toolchains/"$channel"-"$target" --components="$(cat components | tr $'\n' ',')" --disable-ldconfig --disable-verify --verbose \
-&& cd .. \
-&& rm -rf cargo-nightly-"$target"
-
-ENV PATH=/home/rust/bootstrap/.local/bin:/usr/bin:/bin
-
-RUN \
-rustc -Vv
-
-RUN \
-cd packages/cargo \
-&& cargo fetch
-
-RUN \
-cd packages/cargo \
-&& cargo build --release --verbose
-
-RUN \
-ls -la packages/cargo/target/release
-
-WORKDIR /home/rust/build
+# ARG cargoTarget=x86_64-alpine-linux-musl
+# ARG independentBaseUrl=https://alpine.geeknet.cz/distfiles
+# ARG packageVersion=1.10.0
+# ARG cargoPackageVersion=0.11.0-nightly
+# RUN \
+# cd packages/independent \
+# && curl --location --output rustc-"$packageVersion"-"$target".tar.gz "$independentBaseUrl"/rustc-"$packageVersion"-"$target".tar.gz \
+# && curl --location --output rustc-"$packageVersion"-"$target".tar.gz.sha1 "$independentBaseUrl"/rustc-"$packageVersion"-"$target".tar.gz.sha1 \
+# && sha1sum -c rustc-"$packageVersion"-"$target".tar.gz.sha1
+# RUN \
+# cd packages/independent \
+# && curl --location --output rust-std-"$packageVersion"-"$target".tar.gz "$independentBaseUrl"/rust-std-"$packageVersion"-"$target".tar.gz \
+# && curl --location --output rust-std-"$packageVersion"-"$target".tar.gz.sha1 "$independentBaseUrl"/rust-std-"$packageVersion"-"$target".tar.gz.sha1 \
+# && sha1sum -c rust-std-"$packageVersion"-"$target".tar.gz.sha1
+# RUN \
+# cd packages/independent \
+# && curl --location --output cargo-"$cargoPackageVersion"-"$cargoTarget".tar.gz "$independentBaseUrl"/cargo-"$cargoPackageVersion"-"$cargoTarget".tar.gz \
+# && curl --location --output cargo-"$cargoPackageVersion"-"$cargoTarget".tar.gz.sha1 "$independentBaseUrl"/cargo-"$cargoPackageVersion"-"$cargoTarget".tar.gz.sha1 \
+# && sha1sum -c cargo-"$cargoPackageVersion"-"$cargoTarget".tar.gz.sha1
+#
+# # We separate tarball extraction from download to avoid extracting anything if any download is corrupted or mischevious
+# # Note that the extracted cargo tarball has a DIFFERENT root folder naming convention to the other two (it doesn't match tarball name)
+# RUN \
+# mkdir -m 0750 bootstrap \
+# && cp -a packages/independent/home-folder-layout/. bootstrap \
+# && cd packages/independent \
+# && tar --extract --gzip --file rustc-"$packageVersion"-"$target".tar.gz \
+# && cd rustc-"$packageVersion"-x86_64-unknown-linux-musl \
+# && ./install.sh --destdir=/home/rust/bootstrap --prefix=.multirust/toolchains/"$channel"-"$target" --components="$(cat components | tr $'\n' ',')" --disable-ldconfig --disable-verify --verbose \
+# && cd .. \
+# && rm -rf rustc-"$packageVersion"-x86_64-unknown-linux-musl \
+# && tar --extract --gzip --file rust-std-"$packageVersion"-"$target".tar.gz \
+# && cd rust-std-"$packageVersion"-x86_64-unknown-linux-musl \
+# && ./install.sh --destdir=/home/rust/bootstrap --prefix=.multirust/toolchains/"$channel"-"$target" --components="$(cat components | tr $'\n' ',')" --disable-ldconfig --disable-verify --verbose \
+# && cd .. \
+# && rm -rf rust-std-"$packageVersion"-x86_64-unknown-linux-musl \
+# && tar --extract --gzip --file cargo-"$cargoPackageVersion"-"$cargoTarget".tar.gz \
+# && cd cargo-nightly-"$target" \
+# && ./install.sh --destdir=/home/rust/bootstrap --prefix=.multirust/toolchains/"$channel"-"$target" --components="$(cat components | tr $'\n' ',')" --disable-ldconfig --disable-verify --verbose \
+# && cd .. \
+# && rm -rf cargo-nightly-"$target"
+#
+# ENV PATH=/home/rust/bootstrap/.local/bin:/usr/bin:/bin
+#
+# RUN \
+# rustc -Vv
+#
+# RUN \
+# cd packages/cargo \
+# && cargo fetch
+#
+# RUN \
+# cd packages/cargo \
+# && cargo build --release --verbose
+#
+# RUN \
+# ls -la packages/cargo/target/release
+#
+# WORKDIR /home/rust/build
 
 # RUN \
 # cd packages/rustup.rs \
@@ -242,8 +296,6 @@ WORKDIR /home/rust/build
 # && CFLAGS='-O3 -pipe -g0' ./configure --prefix="$PREFIX" --disable-shared --enable-optimize --enable-wrapper=all \
 # && make \
 # && make install
-#
-# ENV CC "$PREFIX"/bin/musl-gcc
 #
 # RUN \
 # mv packages/libunwind packages/llvm/projects &&

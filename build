@@ -240,11 +240,6 @@ build_createBootstrapStaticallyLinkedBinariesForLinuxMusl()
 
 build_buildRustDockerForLinuxMusl()
 {
-	# See also https://github.com/docker/docker/issues/928
-	# Remove dangling images: docker rmi "$(docker images --filter dangling=true)" - except this can include in-build images!
-	# Needs bash
-	"$_program_path"/tools/docker-clean/docker-clean
-	
 	local imageId
 	docker images --all --format '{{.Repository}}_{{.Tag}}\t{{.ID}}' | awk '$1 ~ /^<none>_'"$dockerName"'<none>$/ {print $2}' | while IFS= read -r imageId
 	do
